@@ -482,6 +482,8 @@ pub const RIGHTS_PATH_UNLINK_FILE: Rights = 1 << 26;
 pub const RIGHTS_POLL_FD_READWRITE: Rights = 1 << 27;
 /// The right to invoke `sock_shutdown`.
 pub const RIGHTS_SOCK_SHUTDOWN: Rights = 1 << 28;
+/// The right to accept an incoming connection
+pub const RIGHTS_SOCK_ACCEPT: Rights = 1 << 29;
 
 pub type Fd = u32;
 #[repr(C)]
@@ -1204,7 +1206,8 @@ pub struct Prestat {
 }
 
 /// Read command-line argument data.
-/// The size of the array should match that returned by `args_sizes_get`
+/// The size of the array should match that returned by `args_sizes_get`.
+/// Each argument is expected to be `\0` terminated.
 pub unsafe fn args_get(argv: *mut *mut u8, argv_buf: *mut u8) -> Result<(), Errno> {
     let ret = wasi_snapshot_preview1::args_get(argv as i32, argv_buf as i32);
     match ret {
@@ -1235,6 +1238,7 @@ pub unsafe fn args_sizes_get() -> Result<(Size, Size), Errno> {
 
 /// Read environment variable data.
 /// The sizes of the buffers should match that returned by `environ_sizes_get`.
+/// Key/value pairs are expected to be joined with `=`s, and terminated with `\0`s.
 pub unsafe fn environ_get(environ: *mut *mut u8, environ_buf: *mut u8) -> Result<(), Errno> {
     let ret = wasi_snapshot_preview1::environ_get(environ as i32, environ_buf as i32);
     match ret {
@@ -2138,16 +2142,38 @@ pub unsafe fn sock_shutdown(fd: Fd, how: Sdflags) -> Result<(), Errno> {
     }
 }
 
+/// Accept a connection on a socket
+/// Note: This is similar to `accept` in POSIX.
+///
+/// ## Parameters
+///
+/// * `fd` - File descriptor of the socket to be bind
+/// * `flags` - The desired values of the file descriptor flags.
+///
+/// ## Return
+///
+/// New socket connection file descriptor
+pub unsafe fn accept(fd: Fd, flags: Fdflags) -> Result<Fd, Errno> {
+    let mut rp0 = MaybeUninit::<Fd>::uninit();
+    let ret = wasi_snapshot_preview1::accept(fd as i32, flags as i32, rp0.as_mut_ptr() as i32);
+    match ret {
+        0 => Ok(core::ptr::read(rp0.as_mut_ptr() as i32 as *const Fd)),
+        _ => Err(Errno(ret as u16)),
+    }
+}
+
 pub mod wasi_snapshot_preview1 {
     #[link(wasm_import_module = "wasi_snapshot_preview1")]
     extern "C" {
         /// Read command-line argument data.
-        /// The size of the array should match that returned by `args_sizes_get`
+        /// The size of the array should match that returned by `args_sizes_get`.
+        /// Each argument is expected to be `\0` terminated.
         pub fn args_get(arg0: i32, arg1: i32) -> i32;
         /// Return command-line argument data sizes.
         pub fn args_sizes_get(arg0: i32, arg1: i32) -> i32;
         /// Read environment variable data.
         /// The sizes of the buffers should match that returned by `environ_sizes_get`.
+        /// Key/value pairs are expected to be joined with `=`s, and terminated with `\0`s.
         pub fn environ_get(arg0: i32, arg1: i32) -> i32;
         /// Return environment variable data sizes.
         pub fn environ_sizes_get(arg0: i32, arg1: i32) -> i32;
@@ -2333,5 +2359,8 @@ pub mod wasi_snapshot_preview1 {
         /// Shut down socket send and receive channels.
         /// Note: This is similar to `shutdown` in POSIX.
         pub fn sock_shutdown(arg0: i32, arg1: i32) -> i32;
+        /// Accept a connection on a socket
+        /// Note: This is similar to `accept` in POSIX.
+        pub fn accept(arg0: i32, arg1: i32, arg2: i32) -> i32;
     }
 }
