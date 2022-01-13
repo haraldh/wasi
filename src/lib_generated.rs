@@ -330,6 +330,8 @@ pub const RIGHTS_PATH_UNLINK_FILE: Rights = 0x4000000;
 pub const RIGHTS_POLL_FD_READWRITE: Rights = 0x8000000;
 /// The right to invoke `sock_shutdown`.
 pub const RIGHTS_SOCK_SHUTDOWN: Rights = 0x10000000;
+/// The right to accept an incoming connection
+pub const RIGHTS_SOCK_ACCEPT: Rights = 0x20000000;
 pub type Fd = u32;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -955,7 +957,7 @@ pub unsafe fn fd_filestat_set_times(
 /// ## Return
 ///
 /// * `nread` - The number of bytes read.
-pub unsafe fn fd_pread(fd: Fd, iovs: IovecArray, offset: Filesize) -> Result<Size> {
+pub unsafe fn fd_pread(fd: Fd, iovs: IovecArray<'_>, offset: Filesize) -> Result<Size> {
     let mut nread = MaybeUninit::uninit();
     let rc =
         wasi_snapshot_preview1::fd_pread(fd, iovs.as_ptr(), iovs.len(), offset, nread.as_mut_ptr());
@@ -1006,7 +1008,7 @@ pub unsafe fn fd_prestat_dir_name(fd: Fd, path: *mut u8, path_len: Size) -> Resu
 /// ## Return
 ///
 /// * `nwritten` - The number of bytes written.
-pub unsafe fn fd_pwrite(fd: Fd, iovs: CiovecArray, offset: Filesize) -> Result<Size> {
+pub unsafe fn fd_pwrite(fd: Fd, iovs: CiovecArray<'_>, offset: Filesize) -> Result<Size> {
     let mut nwritten = MaybeUninit::uninit();
     let rc = wasi_snapshot_preview1::fd_pwrite(
         fd,
@@ -1032,7 +1034,7 @@ pub unsafe fn fd_pwrite(fd: Fd, iovs: CiovecArray, offset: Filesize) -> Result<S
 /// ## Return
 ///
 /// * `nread` - The number of bytes read.
-pub unsafe fn fd_read(fd: Fd, iovs: IovecArray) -> Result<Size> {
+pub unsafe fn fd_read(fd: Fd, iovs: IovecArray<'_>) -> Result<Size> {
     let mut nread = MaybeUninit::uninit();
     let rc = wasi_snapshot_preview1::fd_read(fd, iovs.as_ptr(), iovs.len(), nread.as_mut_ptr());
     if let Some(err) = Error::from_raw_error(rc) {
@@ -1149,7 +1151,7 @@ pub unsafe fn fd_tell(fd: Fd) -> Result<Filesize> {
 /// ## Return
 ///
 /// * `nwritten` - The number of bytes written.
-pub unsafe fn fd_write(fd: Fd, iovs: CiovecArray) -> Result<Size> {
+pub unsafe fn fd_write(fd: Fd, iovs: CiovecArray<'_>) -> Result<Size> {
     let mut nwritten = MaybeUninit::uninit();
     let rc = wasi_snapshot_preview1::fd_write(fd, iovs.as_ptr(), iovs.len(), nwritten.as_mut_ptr());
     if let Some(err) = Error::from_raw_error(rc) {
@@ -1520,7 +1522,11 @@ pub unsafe fn random_get(buf: *mut u8, buf_len: Size) -> Result<()> {
 ///
 /// * `ro_datalen` - Number of bytes stored in ri_data.
 /// * `ro_flags` - Message flags.
-pub unsafe fn sock_recv(fd: Fd, ri_data: IovecArray, ri_flags: Riflags) -> Result<(Size, Roflags)> {
+pub unsafe fn sock_recv(
+    fd: Fd,
+    ri_data: IovecArray<'_>,
+    ri_flags: Riflags,
+) -> Result<(Size, Roflags)> {
     let mut ro_datalen = MaybeUninit::uninit();
     let mut ro_flags = MaybeUninit::uninit();
     let rc = wasi_snapshot_preview1::sock_recv(
@@ -1550,7 +1556,7 @@ pub unsafe fn sock_recv(fd: Fd, ri_data: IovecArray, ri_flags: Riflags) -> Resul
 /// ## Return
 ///
 /// * `so_datalen` - Number of bytes transmitted.
-pub unsafe fn sock_send(fd: Fd, si_data: CiovecArray, si_flags: Siflags) -> Result<Size> {
+pub unsafe fn sock_send(fd: Fd, si_data: CiovecArray<'_>, si_flags: Siflags) -> Result<Size> {
     let mut so_datalen = MaybeUninit::uninit();
     let rc = wasi_snapshot_preview1::sock_send(
         fd,
@@ -1578,6 +1584,27 @@ pub unsafe fn sock_shutdown(fd: Fd, how: Sdflags) -> Result<()> {
         Err(err)
     } else {
         Ok(())
+    }
+}
+
+/// Accept a connection on a socket
+/// Note: This is similar to `accept` in POSIX.
+///
+/// ## Parameters
+///
+/// * `fd` - File descriptor of the socket to be bind
+/// * `flags` - The desired values of the file descriptor flags.
+///
+/// ## Return
+///
+/// * `error` - New socket connection file descriptor
+pub unsafe fn accept(fd: Fd, flags: Fdflags) -> Result<Fd> {
+    let mut socket_fd = MaybeUninit::uninit();
+    let rc = wasi_snapshot_preview1::accept(fd, flags, socket_fd.as_mut_ptr());
+    if let Some(err) = Error::from_raw_error(rc) {
+        Err(err)
+    } else {
+        Ok(socket_fd.assume_init())
     }
 }
 
@@ -1849,5 +1876,8 @@ pub mod wasi_snapshot_preview1 {
         /// Shut down socket send and receive channels.
         /// Note: This is similar to `shutdown` in POSIX.
         pub fn sock_shutdown(fd: Fd, how: Sdflags) -> Errno;
+        /// Accept a connection on a socket
+        /// Note: This is similar to `accept` in POSIX.
+        pub fn accept(fd: Fd, flags: Fdflags, socket_fd: *mut Fd) -> Errno;
     }
 }
