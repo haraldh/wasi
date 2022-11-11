@@ -518,4 +518,10 @@
     (param $how $sdflags)
     (result $error (expected (error $errno)))
   )
+
+  (@interface func (export "socketpair")
+    ;;; The file descriptor of the file that has been opened.
+    (result $error (expected (tuple $fd $fd) (error $errno)))
+  )
+
 )
